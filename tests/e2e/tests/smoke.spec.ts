@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 test("home page reports a healthy API", async ({ page }) => {
+	await page.goto("/login");
+	await page.getByTestId("login-email").fill("admin@example.com");
+	await page.getByTestId("login-password").fill("AdminPassword123!");
+	await page.getByTestId("login-submit").click();
+	await page.waitForURL("/");
 	await page.goto("/");
 	await expect(page.getByTestId("api-health")).toHaveText("API 정상");
 });
@@ -8,7 +13,7 @@ test("home page reports a healthy API", async ({ page }) => {
 test("SSE ticks arrive progressively through the web origin", async ({
 	page,
 }) => {
-	await page.goto("/");
+	await page.goto("/login");
 	const result = await page.evaluate(async () => {
 		const response = await fetch("/api/test/sse");
 		if (!response.ok || !response.body) {

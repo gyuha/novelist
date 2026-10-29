@@ -43,6 +43,7 @@ erDiagram
         text password_hash
         text role "member|admin"
         text status "pending|active|suspended"
+        int must_change_password
     }
     novels {
         text id PK
@@ -67,12 +68,13 @@ erDiagram
 | --------------------------- | ------------------------------------------------------- |
 | `id` PK                     |                                                         |
 | `email` UNIQUE              | 로그인 ID (소문자 정규화)                               |
-| `password_hash`             | 비밀번호 해시                                           |
+| `password_hash`             | scrypt 해시(`scrypt$salt$hash`) |
 | `role`                      | `member` \| `admin`. 첫 관리자는 환경변수/시드로만 생성 |
 | `status`                    | `pending`(승인 대기) \| `active` \| `suspended`(정지)   |
+| `must_change_password`       | 0/1. 관리자 초기화 직후 1 — 새 비밀번호를 정하기 전에는 비밀번호 변경·내 정보·로그아웃만 가능 |
 | `created_at`, `approved_at` |                                                         |
 
-상태 전이: `pending → active ⇄ suspended`, 삭제는 `active`/`suspended`에서 즉시 영구 삭제. 소유자 컬럼 없음(이 테이블이 뿌리).
+상태 전이: `pending → active ⇄ suspended`, 삭제는 모든 상태에서 즉시 영구 삭제. 가입 거절은 `pending` 행을 바로 삭제(`rejected` 상태 없음). 소유자 컬럼 없음(이 테이블이 뿌리).
 
 ### sessions — 로그인 세션
 

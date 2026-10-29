@@ -184,6 +184,316 @@ a {
 	color: var(--color-danger);
 }
 
+.header-email {
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-small);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 14rem;
+	align-self: center;
+}
+
+.btn-primary {
+	background: var(--color-accent);
+	border-color: var(--color-accent);
+	color: var(--color-on-accent);
+}
+
+.btn-primary:hover:not(:disabled) {
+	background: var(--color-accent-hover);
+}
+
+.btn-primary:disabled {
+	background: var(--color-surface-muted);
+	border-color: var(--color-border);
+}
+
+.btn-danger {
+	background: var(--color-danger);
+	border-color: var(--color-danger);
+	color: var(--color-on-accent);
+}
+
+.btn-danger:hover:not(:disabled) {
+	background: var(--color-danger);
+	opacity: 0.9;
+}
+
+.btn-danger-outline {
+	border-color: var(--color-danger);
+	color: var(--color-danger);
+}
+
+.btn-block {
+	display: block;
+	width: 100%;
+	margin-top: var(--space-4);
+	min-height: var(--control-height);
+}
+
+.shell-simple {
+	min-height: 100dvh;
+}
+
+.center-page {
+	display: flex;
+	justify-content: center;
+	padding: var(--space-8) var(--page-gutter);
+}
+
+.auth-card {
+	width: 100%;
+	max-width: var(--auth-max-width);
+}
+
+.auth-title {
+	margin: 0 0 var(--space-6);
+	font-size: var(--font-size-heading);
+	line-height: var(--line-height-heading);
+}
+
+.auth-note {
+	margin: var(--space-4) 0 0;
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-small);
+}
+
+.field {
+	margin-top: var(--space-4);
+}
+
+.field-label {
+	display: block;
+	margin-bottom: var(--space-1);
+	font-weight: var(--font-weight-medium);
+}
+
+.field-row {
+	display: flex;
+	gap: var(--space-2);
+}
+
+.input {
+	flex: 1;
+	min-width: 0;
+	min-height: var(--control-height);
+	padding-inline: var(--space-3);
+	border: var(--border-width) solid var(--color-border-strong);
+	border-radius: var(--radius-control);
+	background: var(--color-surface);
+	color: var(--color-text);
+	font: inherit;
+}
+
+.input[aria-invalid="true"] {
+	border-color: var(--color-danger);
+}
+
+.field-hint {
+	margin: var(--space-1) 0 0;
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-caption);
+}
+
+.field-error {
+	margin: var(--space-1) 0 0;
+	color: var(--color-danger);
+	font-size: var(--font-size-small);
+}
+
+.form-alert {
+	margin: 0 0 var(--space-4);
+	padding: var(--space-3);
+	border-radius: var(--radius-control);
+	background: var(--color-danger-soft);
+	color: var(--color-danger);
+}
+
+.form-success {
+	padding: var(--space-3);
+	border-radius: var(--radius-control);
+	background: var(--color-success-soft);
+	color: var(--color-success);
+}
+
+.muted {
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-small);
+}
+
+.menu-root {
+	position: relative;
+}
+
+.menu {
+	position: absolute;
+	inset-block-start: calc(100% + var(--space-1));
+	inset-inline-end: 0;
+	z-index: var(--z-popover);
+	display: flex;
+	flex-direction: column;
+	min-width: 12rem;
+	padding: var(--space-1);
+	border: var(--border-width) solid var(--color-border);
+	border-radius: var(--radius-panel);
+	background: var(--color-surface);
+	box-shadow: var(--shadow-popover);
+}
+
+.menu-email {
+	margin: 0;
+	padding: var(--space-2) var(--space-3);
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-small);
+	overflow-wrap: anywhere;
+}
+
+.menu-item {
+	display: flex;
+	align-items: center;
+	min-height: var(--control-height-compact);
+	padding-inline: var(--space-3);
+	border: 0;
+	border-radius: var(--radius-control);
+	background: none;
+	color: var(--color-text);
+	font: inherit;
+	font-size: var(--font-size-small);
+	text-align: start;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.menu-item:hover {
+	background: var(--color-surface-hover);
+}
+
+.menu-item-danger {
+	color: var(--color-danger);
+}
+
+.modal {
+	width: min(var(--dialog-max-width), calc(100vw - var(--space-8)));
+	padding: var(--space-6);
+	border: 0;
+	border-radius: var(--radius-dialog);
+	background: var(--color-surface);
+	color: var(--color-text);
+	box-shadow: var(--shadow-dialog);
+}
+
+.modal::backdrop {
+	background: var(--color-overlay);
+}
+
+.modal-title {
+	margin: 0 0 var(--space-4);
+	font-size: var(--font-size-heading);
+}
+
+.modal-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: var(--space-2);
+	margin-block: var(--space-4);
+}
+
+.temp-password {
+	display: block;
+	padding: var(--space-3);
+	border-radius: var(--radius-control);
+	background: var(--color-surface-muted);
+	font-family: var(--font-mono);
+	overflow-wrap: anywhere;
+	user-select: all;
+}
+
+.tabs {
+	display: flex;
+	gap: var(--space-1);
+	margin-bottom: var(--space-4);
+	border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.tab {
+	min-height: var(--control-height);
+	padding-inline: var(--space-4);
+	border: 0;
+	border-bottom: var(--focus-width) solid transparent;
+	background: none;
+	color: var(--color-text-secondary);
+	font: inherit;
+	cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+	border-bottom-color: var(--color-accent);
+	color: var(--color-text);
+	font-weight: var(--font-weight-medium);
+}
+
+.filters {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	margin-bottom: var(--space-4);
+}
+
+.filters .input {
+	flex: 0 1 18rem;
+}
+
+.rows {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-2) var(--space-4);
+	padding: var(--space-3) var(--space-2);
+	border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.row[aria-busy="true"] {
+	opacity: 0.6;
+}
+
+.row-main {
+	flex: 1 1 14rem;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.row-meta {
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-small);
+}
+
+.row-actions {
+	display: flex;
+	gap: var(--space-2);
+}
+
+.mobile-only {
+	display: none;
+}
+
+@media (max-width: 47.999rem) {
+	.desktop-only {
+		display: none;
+	}
+
+	.mobile-only {
+		display: block;
+	}
+}
+
 /* Wide desktop: persistent left nav, no drawer. */
 @media (min-width: 75rem) {
 	.nav-toggle,
