@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "goal": "웹에서 AI를 이용해서 웹소서를 쓰는 사이트 개발",
+  "orchestrator": {
+    "workspace": "orchestrator",
+    "provider": "claude",
+    "model": "claude-opus-5-5"
+  },
+  "roles": [
+    {
+      "name": "design",
+      "workspace": "design",
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "folders": [
+        "design",
+        "apps/web/src/styles"
+      ],
+      "instructions": "Design the reading and writing UX for the web novel site: the editor screen, the chapter list, the AI suggestion panel and the reader view. Ship design tokens and a short DESIGN.md that the frontend role can implement directly."
+    },
+    {
+      "name": "frontend",
+      "workspace": "frontend",
+      "provider": "claude",
+      "model": "claude-sonnet-5-5",
+      "folders": [
+        "apps/web"
+      ],
+      "instructions": "Build the web app (Next.js + TypeScript): the novel and chapter editor, streaming AI drafts with accept/reject/regenerate, and the reader pages. Talk to the backend only through the API contract in packages/shared, and don't edit apps/web/src/styles, which design owns."
+    },
+    {
+      "name": "backend",
+      "workspace": "backend",
+      "provider": "claude",
+      "model": "claude-sonnet-5-5",
+      "folders": [
+        "apps/api",
+        "packages/db",
+        "packages/shared"
+      ],
+      "instructions": "Build the API server, the database schema (users, novels, chapters, characters, worldbuilding settings, revision history), auth, and the streaming endpoint that relays AI generation. Own the API types in packages/shared and announce every contract change to the orchestrator."
+    },
+    {
+      "name": "ai",
+      "workspace": "ai",
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "folders": [
+        "packages/ai"
+      ],
+      "instructions": "Own the AI writing pipeline: prompts for Korean web novel prose (continue, rewrite, summarize, suggest the next plot beat), long-context management through chapter summaries and a character/world bible, and the LLM provider adapter that backend calls. Include a small evaluation set of prompts for checking prose quality and character consistency."
+    },
+    {
+      "name": "qa",
+      "workspace": "qa",
+      "provider": "codex",
+      "model": "gpt-5.6-sol",
+      "folders": [
+        "tests/e2e",
+        ".github/workflows"
+      ],
+      "instructions": "Write end-to-end tests (Playwright) for the core flows: sign up, create a novel, generate and edit a chapter with AI, publish, and read. Set up CI and report failures to the orchestrator along with the role that owns the failing code."
+    },
+    {
+      "name": "planning",
+      "workspace": "planning",
+      "provider": "claude",
+      "model": "claude-opus-5-5",
+      "folders": [
+        "docs"
+      ],
+      "instructions": "소설 쓰는 앱(novelist)의 제품 기획을 맡습니다. 요구사항, 사용자 스토리, 기능 명세, 수용 기준, 우선순위를 docs/ 아래에 문서로 정리하고, 오케스트레이터가 design·frontend·backend·ai·qa 역할에 작업을 넘길 수 있도록 작업 단위로 쪼개 줍니다. 애플리케이션 코드는 직접 수정하지 않습니다."
+    }
+  ]
+}
