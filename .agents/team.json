@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "goal": "웹에서 AI를 이용해서 웹소서를 쓰는 사이트 개발",
+  "goal": "승인제 소규모 회원 서비스: AI로 웹소설을 쓰고 삽화·메모를 만드는 사이트 (v1 결정: docs/v1-decisions.md)",
   "orchestrator": {
     "workspace": "orchestrator",
     "provider": "claude",
@@ -16,7 +16,7 @@
         "design",
         "apps/web/src/styles"
       ],
-      "instructions": "Design the reading and writing UX for the web novel site: the editor screen, the chapter list, the AI suggestion panel and the reader view. Ship design tokens and a short DESIGN.md that the frontend role can implement directly."
+      "instructions": "Design the UX for an invite-by-approval, small-group web novel workspace (see docs/v1-decisions.md). Screens: sign-in/sign-up, pending-approval, admin, novel list, chapter list, editor (with AI draft, memo and character side panels), annotations, illustrations, and an author-only reader view (no public publishing). Mobile covers reading and memos only. Ship design tokens in apps/web/src/styles and design/DESIGN.md (principles, app-shell spec, wireframe-level layout per screen) that the frontend role can implement directly."
     },
     {
       "name": "frontend",
@@ -26,7 +26,7 @@
       "folders": [
         "apps/web"
       ],
-      "instructions": "Build the web app (Next.js + TypeScript): the novel and chapter editor, streaming AI drafts with accept/reject/regenerate, and the reader pages. Talk to the backend only through the API contract in packages/shared, and don't edit apps/web/src/styles, which design owns."
+      "instructions": "Build apps/web (Next.js App Router + TypeScript) per design/DESIGN.md: auth and admin screens, novel/chapter management, the TipTap editor (paragraph, emphasis, scene break only), streaming AI drafts with accept/reject/regenerate, memos and annotations, characters, illustrations, snapshot restore, export, and the author-only reader view. There is no public publishing. Reach the API only via same-origin /api/* (Next.js rewrites in dev). Import only from packages/shared and the `AppType` type from apps/api (for hono/client); nothing else from apps/api. Don't edit apps/web/src/styles, which design owns."
     },
     {
       "name": "backend",
@@ -38,7 +38,7 @@
         "packages/db",
         "packages/shared"
       ],
-      "instructions": "Build the API server, the database schema (users, novels, chapters, characters, worldbuilding settings, revision history), auth, and the streaming endpoint that relays AI generation. Own the API types in packages/shared and announce every contract change to the orchestrator."
+      "instructions": "Build apps/api (Hono, TypeScript, basePath /api), packages/db (Drizzle + better-sqlite3, SQLite with WAL and foreign keys) and packages/shared (Zod schemas and shared types only). Also own the repo-root config files (package.json, pnpm-workspace.yaml, biome.json, tsconfig.base.json, .nvmrc, .gitignore). Schema covers users, sessions, novels, chapters, chapter snapshots, chapter summaries, memos, annotations, characters, character reference images, illustrations and AI usage logs; deleting a member cascades to all of their data and files. Auth is email + password with admin approval; the first admin comes from env/seed. Relay AI text generation over SSE and store images on the volume filesystem. Export `AppType` for the web client and announce every contract change to the orchestrator."
     },
     {
       "name": "ai",
@@ -48,7 +48,7 @@
       "folders": [
         "packages/ai"
       ],
-      "instructions": "Own the AI writing pipeline: prompts for Korean web novel prose (continue, rewrite, summarize, suggest the next plot beat), long-context management through chapter summaries and a character/world bible, and the LLM provider adapter that backend calls. Include a small evaluation set of prompts for checking prose quality and character consistency."
+      "instructions": "Own packages/ai: the OpenAI adapters for text and images that backend calls; prompts for Korean web novel prose (continue, rewrite, suggest the next plot beat, summarize); context assembly from recent text, chapter summaries, memos the user marked as AI reference, and the novel's characters; and the illustration pipeline (prompt draft from a scene, automatic character selection, reference images for strong appearance consistency). Include a small evaluation set for prose quality, character consistency and illustration consistency."
     },
     {
       "name": "qa",
@@ -59,7 +59,7 @@
         "tests/e2e",
         ".github/workflows"
       ],
-      "instructions": "Write end-to-end tests (Playwright) for the core flows: sign up, create a novel, generate and edit a chapter with AI, publish, and read. Set up CI and report failures to the orchestrator along with the role that owns the failing code."
+      "instructions": "Write Playwright end-to-end tests in tests/e2e for the core flows: sign-up request → admin approval → sign-in; create a novel and write a chapter; AI draft accept/reject/regenerate (fake adapter); memos and annotations; characters and illustrations (fake adapter); snapshot restore; reader view and export; and the admin actions. Own CI in .github/workflows (Biome, typecheck, Vitest, build, Playwright). Report failures to the orchestrator along with the role that owns the failing code."
     },
     {
       "name": "planning",
