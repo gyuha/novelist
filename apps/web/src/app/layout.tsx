@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AppShell } from "../components/app-shell";
+import { AuthProvider } from "../lib/auth";
 import "../styles/tokens.css";
 import "./globals.css";
 
@@ -13,7 +14,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 	return (
 		<html lang="ko">
 			<body>
-				<AppShell>{children}</AppShell>
+				<AuthProvider>
+					<AppShell>{children}</AppShell>
+				</AuthProvider>
 			</body>
 		</html>
 	);
