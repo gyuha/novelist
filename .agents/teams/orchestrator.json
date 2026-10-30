@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "goal": "AI를 이용한 웹소설 저작 웹어플리케이션",
+  "orchestrator": {
+    "workspace": "orchestrator",
+    "provider": "claude",
+    "model": "claude-opus-5-5"
+  },
+  "roles": [
+    {
+      "name": "design",
+      "workspace": "design",
+      "provider": "antigravity",
+      "model": "gemini-4-argon-high",
+      "folders": [
+        "design",
+        "apps/web/src/styles"
+      ],
+      "instructions": "Write design/DESIGN.md specs and the tokens in apps/web/src/styles for the remaining v1 screens: the memo and annotation panels, characters, illustrations, and the author-only reader. Follow docs/v1-decisions.md. Write the specs so frontend can build them as written, and don't edit any component code."
+    },
+    {
+      "name": "frontend",
+      "workspace": "frontend",
+      "provider": "claude",
+      "model": "claude-sonnet-5-5",
+      "folders": [
+        "apps/web/src/app",
+        "apps/web/src/components",
+        "apps/web/src/lib"
+      ],
+      "instructions": "Build the Next.js App Router UI to match design/DESIGN.md: the TipTap editor, memos and annotations, characters, illustrations, streaming AI drafts with accept, reject and regenerate, snapshots, and the reader. Call the backend only through same-origin /api/* with the hono/client `AppType`, and import nothing from apps/api except that type and packages/shared."
+    },
+    {
+      "name": "backend",
+      "workspace": "backend",
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "folders": [
+        "apps/api",
+        "packages/db",
+        "packages/shared"
+      ],
+      "instructions": "Own the Hono API (basePath /api), the Drizzle and SQLite schema and migrations (keep packages/db/SCHEMA.md in sync), the Zod contracts in packages/shared, and the repo-root config. Cover memos, annotations, characters, illustrations and AI usage logs, plus SSE relay of AI output, and tell the orchestrator about every API or schema contract change."
+    },
+    {
+      "name": "ai",
+      "workspace": "ai",
+      "provider": "claude",
+      "model": "claude-opus-5-5",
+      "folders": [
+        "packages/ai"
+      ],
+      "instructions": "Create and own packages/ai: the text and image model adapters plus a fake adapter for tests, prompts for Korean web-novel prose (continue, rewrite, next plot beat, summarize), context assembly from recent text, chapter summaries, memos marked as AI reference, and characters, and the character-consistent illustration pipeline. Ship a small evaluation set for prose quality and character consistency."
+    },
+    {
+      "name": "qa",
+      "workspace": "qa",
+      "provider": "codex",
+      "model": "gpt-6-sol",
+      "folders": [
+        "tests/e2e",
+        ".github/workflows"
+      ],
+      "instructions": "Write the Playwright E2E tests in tests/e2e for each v1 slice, using the fake AI adapter: auth and approval, novels and chapters, memos and annotations, characters, illustrations, AI drafts, snapshots, and export. Keep .github/workflows/ci.yml green (Biome, typecheck, Vitest, build, Playwright), and send each failure to the orchestrator along with the role that owns the failing code."
+    }
+  ]
+}

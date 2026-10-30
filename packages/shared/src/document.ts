@@ -1,45 +1,66 @@
 import { z } from "zod";
 
 /**
- * 챕터 본문 문서 모델(ProseMirror/TipTap JSON). 허용 노드는 doc·paragraph·text·horizontalRule(장면 전환)뿐이고,
- * 마크는 bold뿐이다. TipTap 에디터 설정은 web에 있으며 이 스키마가 서버 검증의 기준이다.
+ * 문서 모델(ProseMirror/TipTap JSON). 허용 노드는 doc·paragraph·text·horizontalRule(장면 전환)뿐이다.
+ * 챕터 본문의 마크는 bold와 주석(annotation), 메모 본문의 마크는 bold뿐이다.
+ * TipTap 에디터 설정은 web에 있으며 이 스키마가 서버 검증의 기준이다.
  */
 
 export const boldMarkSchema = z.strictObject({ type: z.literal("bold") });
 
-// 4번(주석)은 여기에 주석 마크 스키마를 만들어 이 배열에 추가한다. toMarkdown/toPlainText는 모르는 마크를 무시한다.
-export const markSchema = z.discriminatedUnion("type", [boldMarkSchema]);
-
-export const textNodeSchema = z.strictObject({
-	type: z.literal("text"),
-	text: z.string().min(1),
-	marks: z.array(markSchema).optional(),
+/** 본문 주석 마크. id는 annotations.mark_id와 같다. */
+export const annotationMarkSchema = z.strictObject({
+	type: z.literal("annotation"),
+	attrs: z.strictObject({ id: z.string().min(1).max(64) }),
 });
 
-export const paragraphNodeSchema = z.strictObject({
-	type: z.literal("paragraph"),
-	content: z.array(textNodeSchema).optional(),
-});
+// toMarkdown/toPlainText는 모르는 마크를 무시하므로 주석은 출력되지 않는다.
+export const markSchema = z.discriminatedUnion("type", [
+	boldMarkSchema,
+	annotationMarkSchema,
+]);
+const memoMarkSchema = z.discriminatedUnion("type", [boldMarkSchema]);
 
 /** 장면 전환 */
 export const horizontalRuleNodeSchema = z.strictObject({
 	type: z.literal("horizontalRule"),
 });
 
-export const blockNodeSchema = z.discriminatedUnion("type", [
-	paragraphNodeSchema,
-	horizontalRuleNodeSchema,
-]);
+function buildDocSchemas<M extends z.ZodType>(mark: M) {
+	const textNodeSchema = z.strictObject({
+		type: z.literal("text"),
+		text: z.string().min(1),
+		marks: z.array(mark).optional(),
+	});
+	const paragraphNodeSchema = z.strictObject({
+		type: z.literal("paragraph"),
+		content: z.array(textNodeSchema).optional(),
+	});
+	const blockNodeSchema = z.discriminatedUnion("type", [
+		paragraphNodeSchema,
+		horizontalRuleNodeSchema,
+	]);
+	const docSchema = z.strictObject({
+		type: z.literal("doc"),
+		content: z.array(blockNodeSchema).optional(),
+	});
+	return { textNodeSchema, paragraphNodeSchema, blockNodeSchema, docSchema };
+}
 
-export const docSchema = z.strictObject({
-	type: z.literal("doc"),
-	content: z.array(blockNodeSchema).optional(),
-});
+const chapterSchemas = buildDocSchemas(markSchema);
+export const { textNodeSchema, paragraphNodeSchema, blockNodeSchema } =
+	chapterSchemas;
+export const docSchema = chapterSchemas.docSchema;
+/** 챕터 본문 문서(주석 마크 허용). `docSchema`와 같다. */
+export const chapterDocSchema = docSchema;
+/** 메모 본문 문서(문단·강조·장면 전환만, 주석 마크 거부) */
+export const memoDocSchema = buildDocSchemas(memoMarkSchema).docSchema;
 
 export type Mark = z.infer<typeof markSchema>;
 export type TextNode = z.infer<typeof textNodeSchema>;
 export type BlockNode = z.infer<typeof blockNodeSchema>;
 export type Doc = z.infer<typeof docSchema>;
+export type MemoDoc = z.infer<typeof memoDocSchema>;
 
 /** 새 챕터의 본문(빈 문단 하나) */
 export const emptyDoc = (): Doc => ({
@@ -48,6 +69,65 @@ export const emptyDoc = (): Doc => ({
 });
 
 export const SCENE_BREAK = "* * *";
+
+/** 본문에 있는 주석 마크 id */
+export function annotationIds(doc: Doc): Set<string> {
+	const ids = new Set<string>();
+	for (const block of doc.content ?? [])
+		if (block.type === "paragraph")
+			for (const n of block.content ?? [])
+				for (const m of n.marks ?? [])
+					if (m.type === "annotation") ids.add(m.attrs.id);
+	return ids;
+}
+
+/** keep이 거짓인 id의 주석 마크를 제거한 새 문서(다른 마크·텍스트는 그대로) */
+export function stripAnnotations(doc: Doc, keep: (id: string) => boolean): Doc {
+	return {
+		...doc,
+		content: doc.content?.map((block) => {
+			if (block.type !== "paragraph" || !block.content) return block;
+			return {
+				...block,
+				content: block.content.map((n): TextNode => {
+					if (!n.marks) return n;
+					const marks = n.marks.filter(
+						(m) => m.type !== "annotation" || keep(m.attrs.id),
+					);
+					if (marks.length === n.marks.length) return n;
+					const { marks: _dropped, ...rest } = n;
+					return marks.length > 0 ? { ...rest, marks } : rest;
+				}),
+			};
+		}),
+	};
+}
+
+/** 그 주석 마크가 걸린 텍스트(문단 사이는 공백 하나). 없으면 빈 문자열 */
+export function annotationQuote(doc: Doc, id: string): string {
+	const parts: string[] = [];
+	for (const block of doc.content ?? []) {
+		if (block.type !== "paragraph") continue;
+		const text = (block.content ?? [])
+			.filter((n) =>
+				n.marks?.some((m) => m.type === "annotation" && m.attrs.id === id),
+			)
+			.map((n) => n.text)
+			.join("");
+		if (text) parts.push(text);
+	}
+	return parts.join(" ");
+}
+
+/** 한 텍스트에 주석 마크가 둘 이상 걸려 있으면(= 주석 범위가 겹치면) 참 */
+export function hasOverlappingAnnotations(doc: Doc): boolean {
+	for (const block of doc.content ?? [])
+		if (block.type === "paragraph")
+			for (const n of block.content ?? [])
+				if ((n.marks ?? []).filter((m) => m.type === "annotation").length > 1)
+					return true;
+	return false;
+}
 
 const isBold = (n: TextNode) =>
 	n.marks?.some((m) => m.type === "bold") ?? false;

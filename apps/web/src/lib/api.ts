@@ -13,6 +13,8 @@ export class ApiRequestError extends Error {
 		message: string,
 		/** Set on 409 version_conflict: the server's current chapter version. */
 		readonly currentUpdatedAt?: number,
+		/** Set on 400 validation_error with a specific cause, e.g. "annotation_overlap". */
+		readonly reason?: string,
 	) {
 		super(message);
 	}
@@ -30,12 +32,15 @@ export async function request(pending: Promise<Response>): Promise<Response> {
 	const raw = await res.json().catch(() => null);
 	const parsed = apiErrorSchema.safeParse(raw);
 	if (parsed.success) {
-		const current = (raw as { currentUpdatedAt?: unknown }).currentUpdatedAt;
+		const extra = raw as { currentUpdatedAt?: unknown; reason?: unknown };
 		throw new ApiRequestError(
 			parsed.data.code,
 			res.status,
 			parsed.data.message,
-			typeof current === "number" ? current : undefined,
+			typeof extra.currentUpdatedAt === "number"
+				? extra.currentUpdatedAt
+				: undefined,
+			typeof extra.reason === "string" ? extra.reason : undefined,
 		);
 	}
 	throw new ApiRequestError("unknown", res.status, `HTTP ${res.status}`);
@@ -65,8 +70,19 @@ const messages: Record<RequestErrorCode, string> = {
 	unknown: "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요",
 };
 
+const reasonMessages: Record<string, string> = {
+	annotation_overlap:
+		"이미 주석이 있는 범위와 겹쳐 추가할 수 없습니다. 다른 범위를 선택해 주세요",
+};
+
 export function errorText(error: unknown): string {
+	const reason = errorReason(error);
+	if (reason && reasonMessages[reason]) return reasonMessages[reason];
 	return messages[error instanceof ApiRequestError ? error.code : "unknown"];
+}
+
+export function errorReason(error: unknown): string | undefined {
+	return error instanceof ApiRequestError ? error.reason : undefined;
 }
 
 export function errorCode(error: unknown): RequestErrorCode {

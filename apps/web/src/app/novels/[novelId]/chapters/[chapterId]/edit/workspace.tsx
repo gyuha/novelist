@@ -1,16 +1,19 @@
 "use client";
 
 import {
+	type Annotation,
 	type Chapter,
 	type ChapterSummary,
 	type Doc,
 	docSchema,
 } from "@novelist/shared";
-import { EditorContent, useEditor } from "@tiptap/react";
+import type { MarkType } from "@tiptap/pm/model";
+import { type Editor, EditorContent, useEditor } from "@tiptap/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog, Dialog } from "../../../../../../components/dialog";
+import { MemoWorkspace } from "../../../../../../components/memo-workspace";
 import { WorkHeader } from "../../../../../../components/work-header";
 import {
 	ApiRequestError,
@@ -22,12 +25,21 @@ import {
 	type Draft,
 	writeDraft,
 } from "../../../../../../lib/draft";
-import { editorExtensions } from "../../../../../../lib/editor-extensions";
+import {
+	ANNOTATION_MARK,
+	editorExtensions,
+} from "../../../../../../lib/editor-extensions";
 import { formatDateTime, formatTime } from "../../../../../../lib/format";
+import { createAnnotation, withLiveMarks } from "../../../../../../lib/memos";
 import { getChapter, saveChapterBody } from "../../../../../../lib/novels";
+import type { MemoGuard } from "../../../../../../lib/use-memo-guard";
+import { type AddState, AnnotationPanel } from "./annotation-panel";
 import { SnapshotPanel } from "./snapshot-panel";
 
 const DRAFT_INTERVAL_MS = 3000;
+
+const annotationType = (editor: Editor) =>
+	editor.schema.marks[ANNOTATION_MARK] as MarkType;
 
 type SaveStatus =
 	| "clean"
@@ -36,6 +48,14 @@ type SaveStatus =
 	| "saved"
 	| "failed"
 	| "conflict";
+
+type Panel = "memo" | "annotation" | "snapshot";
+
+type Outcome = "ok" | "conflict" | "failed" | "busy";
+
+const OVERLAP_HINT =
+	"이미 주석이 있는 범위와 겹쳐 추가할 수 없습니다. 다른 범위를 선택해 주세요";
+const SELECT_HINT = "주석을 붙일 본문을 선택해 주세요";
 
 type LocalDraft =
 	| { state: "none" }
@@ -75,7 +95,17 @@ export function EditorWorkspace({
 	);
 	const [local, setLocal] = useState<LocalDraft>({ state: "none" });
 	const [isEmpty, setIsEmpty] = useState(false);
-	const [snapshotsOpen, setSnapshotsOpen] = useState(false);
+	const [panel, setPanel] = useState<Panel | null>(null);
+	const [memoMounted, setMemoMounted] = useState(false);
+	const [annDraft, setAnnDraft] = useState<{
+		from: number;
+		to: number;
+		quote: string;
+	} | null>(null);
+	const [addState, setAddState] = useState<AddState>({ status: "idle" });
+	const [annNotice, setAnnNotice] = useState<string | null>(null);
+	const [annRefresh, setAnnRefresh] = useState(0);
+	const [selectedMarkId, setSelectedMarkId] = useState<string | null>(null);
 	const [reloadOpen, setReloadOpen] = useState(false);
 	const [reloadBusy, setReloadBusy] = useState(false);
 	const [reloadError, setReloadError] = useState<string | null>(null);
@@ -89,6 +119,11 @@ export function EditorWorkspace({
 	const savingRef = useRef(false);
 	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const flushRef = useRef<() => void>(() => {});
+	// Annotation mark edits that are bookkeeping, not text the member typed.
+	const silentRef = useRef(false);
+	// An annotation being added: its mark is in the editor but not confirmed by the server yet.
+	const pendingAnnRef = useRef<{ markId: string; body: string } | null>(null);
+	const memoGuardRef = useRef<MemoGuard | null>(null);
 
 	const cancelDraftTimer = useCallback(() => {
 		if (timerRef.current) clearTimeout(timerRef.current);
@@ -118,6 +153,11 @@ export function EditorWorkspace({
 			setIsEmpty(e.isEmpty);
 		},
 		onUpdate: ({ editor: e }) => {
+			if (silentRef.current) {
+				if (!dirtyRef.current)
+					savedJsonRef.current = JSON.stringify(e.getJSON());
+				return;
+			}
 			// ProseMirror can report an update after a flush without changing the document
 			// (e.g. right after save); that is not an edit.
 			if (JSON.stringify(e.getJSON()) === savedJsonRef.current) return;
@@ -159,14 +199,58 @@ export function EditorWorkspace({
 			setSaveError(null);
 			setRecovered(false);
 			setStatus("clean");
+			pendingAnnRef.current = null;
+			setAnnDraft(null);
+			setAddState({ status: "idle" });
+			setAnnRefresh((n) => n + 1);
 		},
 		[editor, userId, chapterId, cancelDraftTimer],
 	);
 
-	/** `expected` is the version the server must still hold; overwrite passes the 409's value. */
-	const save = useCallback(
-		async (expected: number = baseRef.current): Promise<boolean> => {
-			if (!editor || savingRef.current) return false;
+	/** Adds or removes an annotation mark without counting it as an edit. */
+	const markSilently = useCallback(
+		(change: (tr: NonNullable<typeof editor>["state"]["tr"]) => void) => {
+			if (!editor) return;
+			const tr = editor.state.tr.setMeta("addToHistory", false);
+			change(tr);
+			if (!tr.docChanged) return;
+			silentRef.current = true;
+			try {
+				editor.view.dispatch(tr);
+			} finally {
+				silentRef.current = false;
+			}
+		},
+		[editor],
+	);
+
+	const removeMark = useCallback(
+		(markId: string) => {
+			if (!editor) return;
+			const type = annotationType(editor);
+			const doc = editor.state.doc;
+			markSilently((tr) => {
+				doc.descendants((node, pos) => {
+					for (const m of node.marks)
+						if (m.type === type && m.attrs.id === markId)
+							tr.removeMark(pos, pos + node.nodeSize, m);
+				});
+			});
+		},
+		[editor, markSilently],
+	);
+
+	/**
+	 * Runs one server write of the current document (plain save, or annotation + body together)
+	 * and keeps the save bookkeeping in one place. `expected` is the version the server must
+	 * still hold; overwrite passes the 409's value.
+	 */
+	const persist = useCallback(
+		async (
+			expected: number,
+			run: (doc: Doc, expected: number) => Promise<number>,
+		): Promise<{ outcome: Outcome; message?: string }> => {
+			if (!editor || savingRef.current) return { outcome: "busy" };
 			// Text typed an instant ago may still sit in the DOM (e.g. an IME-style insert
 			// followed straight by Cmd/Ctrl+S); read it into the document before serialising.
 			(
@@ -175,21 +259,17 @@ export function EditorWorkspace({
 			const sentJson = JSON.stringify(editor.getJSON());
 			const parsed = docSchema.safeParse(editor.getJSON());
 			if (!parsed.success) {
-				setSaveError("본문 형식이 올바르지 않아 저장하지 못했습니다");
+				const message = "본문 형식이 올바르지 않아 저장하지 못했습니다";
+				setSaveError(message);
 				setStatus("failed");
-				return false;
+				return { outcome: "failed", message };
 			}
 			const version = editVersionRef.current;
 			savingRef.current = true;
 			setStatus("saving");
 			setSaveError(null);
 			try {
-				const updatedAt = await saveChapterBody(
-					novelId,
-					chapterId,
-					parsed.data,
-					expected,
-				);
+				const updatedAt = await run(parsed.data, expected);
 				baseRef.current = updatedAt;
 				savedJsonRef.current = sentJson;
 				setConflict(null);
@@ -210,9 +290,12 @@ export function EditorWorkspace({
 					setStatus("dirty");
 					scheduleDraft();
 				}
-				return true;
+				// The server re-judged every annotation's state against the saved body.
+				setAnnRefresh((n) => n + 1);
+				return { outcome: "ok" };
 			} catch (error) {
 				const code = errorCode(error);
+				flushRef.current();
 				if (code === "version_conflict") {
 					setConflict({
 						current:
@@ -221,19 +304,131 @@ export function EditorWorkspace({
 								: null,
 					});
 					setStatus("conflict");
-				} else {
-					if (code === "payload_too_large") setSizeError(true);
-					else setSaveError(errorText(error));
-					setStatus("failed");
+					return { outcome: "conflict" };
 				}
-				flushRef.current();
-				return false;
+				if (code === "payload_too_large") setSizeError(true);
+				else setSaveError(errorText(error));
+				setStatus("failed");
+				return { outcome: "failed", message: errorText(error) };
 			} finally {
 				savingRef.current = false;
 			}
 		},
-		[editor, novelId, chapterId, userId, cancelDraftTimer, scheduleDraft],
+		[editor, userId, chapterId, cancelDraftTimer, scheduleDraft],
 	);
+
+	const save = useCallback(
+		async (expected: number = baseRef.current): Promise<boolean> =>
+			(
+				await persist(expected, (doc, exp) =>
+					saveChapterBody(novelId, chapterId, doc, exp),
+				)
+			).outcome === "ok",
+		[persist, novelId, chapterId],
+	);
+
+	const addAnnotationRun =
+		(markId: string, body: string) => async (doc: Doc, expected: number) =>
+			(
+				await createAnnotation(novelId, chapterId, {
+					markId,
+					body,
+					chapterBody: doc,
+					expectedUpdatedAt: expected,
+				})
+			).updatedAt;
+
+	/** Settles the add form after a combined annotation + body save attempt. */
+	function finishAnnotation(result: { outcome: Outcome; message?: string }) {
+		const pending = pendingAnnRef.current;
+		if (result.outcome === "ok") {
+			pendingAnnRef.current = null;
+			setAnnDraft(null);
+			setAddState({ status: "idle" });
+			setAnnNotice("주석과 본문이 저장되었습니다");
+		} else if (result.outcome === "conflict") {
+			// the mark stays so "내 내용으로 덮어쓰기" can resend annotation and body together
+			setAddState({
+				status: "conflict",
+				error:
+					"다른 곳에서 이 챕터가 변경되어 주석과 본문 모두 저장되지 않았습니다. 본문 위의 선택지에서 덮어쓰기 또는 다시 불러오기를 선택해 주세요",
+			});
+		} else {
+			if (pending) removeMark(pending.markId);
+			pendingAnnRef.current = null;
+			setAddState({
+				status: "failed",
+				error:
+					`주석과 본문 모두 저장되지 않았습니다. ${result.message ?? ""}`.trim(),
+			});
+		}
+	}
+
+	function openAnnotationForm() {
+		if (!editor) return;
+		const { from, to } = editor.state.selection;
+		setAnnNotice(null);
+		setAddState({ status: "idle" });
+		setAnnDraft({
+			from,
+			to,
+			quote: editor.state.doc.textBetween(from, to, " "),
+		});
+		setPanel("annotation");
+	}
+
+	async function submitAnnotation(body: string) {
+		if (!editor || !annDraft || savingRef.current) return;
+		(
+			editor.view as unknown as { domObserver?: { flush: () => void } }
+		).domObserver?.flush();
+		const { from, to, quote } = annDraft;
+		const type = annotationType(editor);
+		const doc = editor.state.doc;
+		if (
+			to > doc.content.size ||
+			doc.textBetween(from, to, " ") !== quote ||
+			doc.rangeHasMark(from, to, type)
+		) {
+			setAddState({
+				status: "failed",
+				error: "선택한 범위가 바뀌었습니다. 본문에서 다시 선택해 주세요",
+			});
+			return;
+		}
+		const markId = crypto.randomUUID();
+		markSilently((tr) => {
+			tr.addMark(from, to, type.create({ id: markId }));
+		});
+		pendingAnnRef.current = { markId, body };
+		setAnnNotice(null);
+		setAddState({ status: "saving" });
+		finishAnnotation(
+			await persist(baseRef.current, addAnnotationRun(markId, body)),
+		);
+	}
+
+	function cancelAnnotation() {
+		const pending = pendingAnnRef.current;
+		if (pending) {
+			removeMark(pending.markId);
+			pendingAnnRef.current = null;
+			// the conflict was only about this annotation: nothing left to resolve
+			if (!dirtyRef.current) {
+				setConflict(null);
+				setStatus("clean");
+			}
+		}
+		setAnnDraft(null);
+		setAddState({ status: "idle" });
+	}
+
+	function gotoAnnotation(annotation: Annotation) {
+		setSelectedMarkId(annotation.markId);
+		editor?.view.dom
+			.querySelector(`[data-annotation-id="${CSS.escape(annotation.markId)}"]`)
+			?.scrollIntoView({ block: "center" });
+	}
 
 	const saveRef = useRef(save);
 	saveRef.current = save;
@@ -248,14 +443,22 @@ export function EditorWorkspace({
 				return;
 			}
 		}
-		await save(current);
+		const pending = pendingAnnRef.current;
+		if (pending) {
+			setAddState({ status: "saving" });
+			finishAnnotation(
+				await persist(current, addAnnotationRun(pending.markId, pending.body)),
+			);
+		} else {
+			await save(current);
+		}
 	}
 
 	async function reloadFromServer() {
 		setReloadBusy(true);
 		setReloadError(null);
 		try {
-			adopt(await getChapter(novelId, chapterId));
+			adopt(await withLiveMarks(novelId, await getChapter(novelId, chapterId)));
 			setReloadOpen(false);
 		} catch (error) {
 			setReloadError(errorText(error));
@@ -307,7 +510,7 @@ export function EditorWorkspace({
 	// Closing or reloading the tab with unsaved text asks first.
 	useEffect(() => {
 		const onUnload = (event: BeforeUnloadEvent) => {
-			if (dirtyRef.current) {
+			if (dirtyRef.current || memoGuardRef.current?.dirty) {
 				event.preventDefault();
 				event.returnValue = "";
 			}
@@ -319,7 +522,11 @@ export function EditorWorkspace({
 	// In-app navigation: intercept link clicks while there are unsaved changes.
 	useEffect(() => {
 		const onClick = (event: MouseEvent) => {
-			if (!dirtyRef.current || event.defaultPrevented || event.button !== 0)
+			if (
+				!(dirtyRef.current || memoGuardRef.current?.dirty) ||
+				event.defaultPrevented ||
+				event.button !== 0
+			)
 				return;
 			if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
 				return;
@@ -337,12 +544,42 @@ export function EditorWorkspace({
 
 	function leave(href: string) {
 		dirtyRef.current = false;
+		if (memoGuardRef.current) memoGuardRef.current.dirty = false;
 		router.push(href);
 	}
 
 	const unsaved = status !== "clean" && status !== "saved";
 	const locked = recovery !== null;
 	const bold = editor?.isActive("bold") ?? false;
+
+	function togglePanel(next: Panel) {
+		if (next === "memo") setMemoMounted(true);
+		setPanel((current) => (current === next ? null : next));
+	}
+
+	// Why "주석 추가" is unavailable right now (null = available). Read on every render:
+	// the editor re-renders on each transaction, selection changes included.
+	const selection = editor?.state.selection;
+	const selectedText =
+		editor && selection && !selection.empty
+			? editor.state.doc.textBetween(selection.from, selection.to, " ")
+			: "";
+	const overlapsAnnotation =
+		editor && selection && selectedText.trim() !== ""
+			? editor.state.doc.rangeHasMark(
+					selection.from,
+					selection.to,
+					annotationType(editor),
+				)
+			: false;
+	const addBlocked =
+		selectedText.trim() === ""
+			? SELECT_HINT
+			: overlapsAnnotation
+				? OVERLAP_HINT
+				: status === "saving" || status === "conflict"
+					? "저장이 끝난 뒤 추가할 수 있습니다"
+					: null;
 
 	const statusLabel = {
 		clean: "변경 없음",
@@ -360,10 +597,7 @@ export function EditorWorkspace({
 				<span aria-current="page">{chapter.title}</span>
 			</WorkHeader>
 
-			<div
-				className="editor-grid"
-				data-panel={snapshotsOpen ? "open" : "closed"}
-			>
+			<div className="editor-grid" data-panel={panel ? "open" : "closed"}>
 				<nav className="chapter-nav" aria-label="챕터 탐색">
 					<Link href={`/novels/${novelId}`} className="nav-link">
 						← 챕터 목록
@@ -496,12 +730,49 @@ export function EditorWorkspace({
 							type="button"
 							className="btn"
 							disabled={locked}
-							aria-pressed={snapshotsOpen}
-							onClick={() => setSnapshotsOpen((v) => !v)}
+							aria-pressed={panel === "snapshot"}
+							onClick={() => togglePanel("snapshot")}
 							data-testid="snapshot-toggle"
 						>
 							스냅샷
 						</button>
+						<button
+							type="button"
+							className="btn"
+							disabled={locked}
+							aria-pressed={panel === "memo"}
+							onClick={() => togglePanel("memo")}
+							data-testid="memo-toggle"
+						>
+							메모
+						</button>
+						<button
+							type="button"
+							className="btn"
+							disabled={locked}
+							aria-pressed={panel === "annotation"}
+							onClick={() => togglePanel("annotation")}
+							data-testid="annotation-toggle"
+						>
+							주석
+						</button>
+						<button
+							type="button"
+							className="btn"
+							disabled={locked || addBlocked !== null}
+							aria-describedby="annotation-add-hint"
+							onClick={openAnnotationForm}
+							data-testid="annotation-add"
+						>
+							주석 추가
+						</button>
+						<span
+							id="annotation-add-hint"
+							className="muted"
+							data-testid="annotation-add-hint"
+						>
+							{addBlocked}
+						</span>
 						<Link
 							href={`/novels/${novelId}/chapters/${chapterId}/read`}
 							className="btn btn-link"
@@ -541,6 +812,9 @@ export function EditorWorkspace({
 						</p>
 					)}
 
+					{selectedMarkId && (
+						<style>{`.annotation-mark[data-annotation-id="${CSS.escape(selectedMarkId)}"]{outline:var(--focus-width) solid var(--color-focus)}`}</style>
+					)}
 					<div className="editor-frame" aria-busy={!editor}>
 						{!editor && <p className="muted">에디터를 불러오는 중…</p>}
 						{isEmpty && editor && (
@@ -552,14 +826,60 @@ export function EditorWorkspace({
 					</div>
 				</main>
 
-				{snapshotsOpen && (
+				{panel === "snapshot" && (
 					<SnapshotPanel
 						novelId={novelId}
 						chapterId={chapterId}
 						unsaved={unsaved}
-						onRestored={adopt}
-						onClose={() => setSnapshotsOpen(false)}
+						onRestored={async (restored) =>
+							adopt(await withLiveMarks(novelId, restored))
+						}
+						onClose={() => setPanel(null)}
 					/>
+				)}
+				{panel === "annotation" && (
+					<AnnotationPanel
+						novelId={novelId}
+						chapterId={chapterId}
+						refreshKey={annRefresh}
+						adding={annDraft}
+						addState={addState}
+						notice={annNotice}
+						onSubmitAdd={submitAnnotation}
+						onCancelAdd={cancelAnnotation}
+						onSelect={gotoAnnotation}
+						onDeleted={(gone) => removeMark(gone.markId)}
+						onClose={() => setPanel(null)}
+					/>
+				)}
+				{/* kept mounted once opened so closing the panel never drops an unsaved memo */}
+				{memoMounted && (
+					<aside
+						className="snapshot-panel"
+						aria-label="메모"
+						hidden={panel !== "memo"}
+						data-testid="memo-panel"
+					>
+						<div className="snapshot-head">
+							<h2 className="panel-title">메모</h2>
+							<button
+								type="button"
+								className="btn"
+								onClick={() => setPanel(null)}
+								data-testid="memo-panel-close"
+							>
+								닫기
+							</button>
+						</div>
+						<Link href="/memos" className="muted" data-testid="memo-panel-all">
+							전체 메모 화면으로
+						</Link>
+						<MemoWorkspace
+							variant="panel"
+							context={{ novelId, chapterId }}
+							guardRef={memoGuardRef}
+						/>
+					</aside>
 				)}
 			</div>
 
@@ -578,6 +898,12 @@ export function EditorWorkspace({
 						서버 본문을 다시 불러오면 저장하지 않은 수정 내용과 이 챕터의 로컬
 						초안을 버립니다
 					</p>
+					{annDraft && (
+						<p data-testid="reload-dialog-annotation-note">
+							추가 중인 주석도 함께 버립니다. 불러온 뒤 새 본문에서 범위를 다시
+							선택해 주세요
+						</p>
+					)}
 				</ConfirmDialog>
 			)}
 
@@ -619,7 +945,10 @@ export function EditorWorkspace({
 							className="btn btn-primary"
 							disabled={status === "saving" || status === "conflict"}
 							onClick={async () => {
-								if (await save()) leave(leaveHref);
+								if (dirtyRef.current && !(await save())) return;
+								const memo = memoGuardRef.current;
+								if (memo?.dirty && !(await memo.save())) return;
+								leave(leaveHref);
 							}}
 							data-testid="leave-save"
 						>

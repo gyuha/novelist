@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { DocView } from "../../../../../../components/doc-view";
 import { useMe } from "../../../../../../lib/auth";
 import { clearDraft, readDraft } from "../../../../../../lib/draft";
+import { withLiveMarks } from "../../../../../../lib/memos";
 import {
 	getChapter,
 	getNovel,
@@ -34,17 +35,18 @@ function EditorLoader({
 	const me = useMe();
 	const isDesktop = useIsDesktop();
 	const { state, reload } = useList(async () => {
-		const [novel, chapter, chapters] = await Promise.all([
+		const [novel, loaded, chapters] = await Promise.all([
 			getNovel(novelId),
 			getChapter(novelId, chapterId),
 			listChapters(novelId),
 		]);
+		const chapter = await withLiveMarks(novelId, loaded);
 		let draft = readDraft(me.id, chapterId);
 		// Only a draft newer than the server body and different from it is offered.
 		if (
 			draft &&
-			(draft.savedAt <= chapter.updatedAt ||
-				JSON.stringify(draft.body) === JSON.stringify(chapter.body))
+			(draft.savedAt <= loaded.updatedAt ||
+				JSON.stringify(draft.body) === JSON.stringify(loaded.body))
 		) {
 			clearDraft(me.id, chapterId);
 			draft = null;
@@ -100,6 +102,13 @@ function EditorLoader({
 						className="btn btn-link"
 					>
 						리더로 읽기
+					</Link>{" "}
+					<Link
+						href={`/novels/${novelId}/chapters/${chapterId}/memos`}
+						className="btn btn-link"
+						data-testid="editor-mobile-memos"
+					>
+						이 챕터 메모
 					</Link>
 				</p>
 				<div className="prose">

@@ -25,6 +25,7 @@ import {
 	updateChapterRequestSchema,
 } from "@novelist/shared";
 import { type Context, Hono } from "hono";
+import { reconcileAnnotations } from "../annotations";
 import { fail } from "../errors";
 import type { AppEnv } from "../middleware";
 import { addSnapshot } from "../snapshots";
@@ -53,26 +54,28 @@ const toSnapshotSummary = (r: SnapshotRow): SnapshotSummary => ({
 	createdAt: r.createdAt,
 });
 
+/** 소설 소유권을 확인한 뒤 챕터를 찾는다. 남의 것·없는 것·다른 소설의 챕터는 모두 같은 결과다. */
+export function findChapterOf(db: Db, c: Context<AppEnv>) {
+	const novel = findNovel(db, c, c.req.param("novelId") ?? "");
+	if (!novel) return undefined;
+	return db
+		.select()
+		.from(chapters)
+		.where(
+			and(
+				eq(chapters.id, c.req.param("chapterId") ?? ""),
+				eq(chapters.novelId, novel.id),
+			),
+		)
+		.get();
+}
+
 const byteLength = (s: string) => Buffer.byteLength(s, "utf8");
 // 요청 본문 전체에 대한 거친 상한: 문서 1MB에 expectedUpdatedAt 등 봉투 여유만 더한다.
 const REQUEST_SLACK_BYTES = 1024;
 
 export function chapterRoutes(db: Db, now: () => number) {
-	/** 소설 소유권을 확인한 뒤 챕터를 찾는다. 남의 것·없는 것·다른 소설의 챕터는 모두 같은 결과다. */
-	function findChapter(c: Context<AppEnv>) {
-		const novel = findNovel(db, c, c.req.param("novelId") ?? "");
-		if (!novel) return undefined;
-		return db
-			.select()
-			.from(chapters)
-			.where(
-				and(
-					eq(chapters.id, c.req.param("chapterId") ?? ""),
-					eq(chapters.novelId, novel.id),
-				),
-			)
-			.get();
-	}
+	const findChapter = (c: Context<AppEnv>) => findChapterOf(db, c);
 	const listChapters = (novelId: string) =>
 		db
 			.select()
@@ -205,10 +208,13 @@ export function chapterRoutes(db: Db, now: () => number) {
 						currentUpdatedAt: chapter.updatedAt,
 					});
 				const updatedAt = nextVersion(chapter.updatedAt);
-				db.update(chapters)
-					.set({ body: JSON.stringify(body), updatedAt })
-					.where(eq(chapters.id, chapter.id))
-					.run();
+				db.transaction((tx) => {
+					const clean = reconcileAnnotations(tx, now, chapter.id, body);
+					tx.update(chapters)
+						.set({ body: JSON.stringify(clean), updatedAt })
+						.where(eq(chapters.id, chapter.id))
+						.run();
+				});
 				return c.json<SaveChapterBodyResponse>({ updatedAt }, 200);
 			})
 			.get("/:novelId/chapters/:chapterId/snapshots", (c) => {
@@ -258,10 +264,16 @@ export function chapterRoutes(db: Db, now: () => number) {
 							body: chapter.body,
 							kind: "auto",
 						});
+						const clean = reconcileAnnotations(
+							tx,
+							now,
+							chapter.id,
+							JSON.parse(snapshot.body) as Doc,
+						);
 						return tx
 							.update(chapters)
 							.set({
-								body: snapshot.body,
+								body: JSON.stringify(clean),
 								updatedAt: nextVersion(chapter.updatedAt),
 							})
 							.where(eq(chapters.id, chapter.id))

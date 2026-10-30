@@ -7,6 +7,7 @@ import { ConfirmDialog } from "../../components/dialog";
 import { MoreMenu } from "../../components/more-menu";
 import { NovelForm } from "../../components/novel-form";
 import { errorText } from "../../lib/api";
+import { novelDeletePreview } from "../../lib/memos";
 import {
 	createNovel,
 	deleteNovel,
@@ -14,6 +15,7 @@ import {
 	listNovels,
 	updateNovel,
 } from "../../lib/novels";
+import { DeleteMemoNote, useDeletePreview } from "../../lib/use-delete-preview";
 import { useList } from "../../lib/use-list";
 import { formatDate } from "../admin/format";
 
@@ -222,11 +224,8 @@ export default function NovelsPage() {
 			)}
 
 			{deleting && (
-				<ConfirmDialog
-					title="소설 삭제"
-					confirmLabel="소설 삭제"
-					busyLabel="삭제 중…"
-					danger
+				<DeleteNovelDialog
+					novel={deleting}
 					busy={deleteBusy}
 					error={deleteError}
 					onCancel={() => setDeleting(null)}
@@ -239,21 +238,56 @@ export default function NovelsPage() {
 							await reload();
 						} catch (error) {
 							setDeleteError(errorText(error));
+							return false;
 						} finally {
 							setDeleteBusy(false);
 						}
+						return true;
 					}}
-					testId="delete-novel-dialog"
-				>
-					<p>
-						<strong>{deleting.title}</strong>
-					</p>
-					<p>
-						소설을 삭제하면 모든 챕터와 스냅샷이 즉시 영구 삭제되며 되돌릴 수
-						없습니다
-					</p>
-				</ConfirmDialog>
+				/>
 			)}
 		</>
+	);
+}
+
+function DeleteNovelDialog({
+	novel,
+	busy,
+	error,
+	onCancel,
+	onConfirm,
+}: {
+	novel: Novel;
+	busy: boolean;
+	error: string | null;
+	onCancel: () => void;
+	/** Resolves false when the delete failed, so the memo count is read again. */
+	onConfirm: () => Promise<boolean>;
+}) {
+	const preview = useDeletePreview(() => novelDeletePreview(novel.id));
+	return (
+		<ConfirmDialog
+			title="소설 삭제"
+			confirmLabel="소설 삭제"
+			busyLabel="삭제 중…"
+			danger
+			busy={busy}
+			error={error}
+			confirmDisabled={preview.state.status !== "ready"}
+			onCancel={onCancel}
+			onConfirm={async () => {
+				if (!(await onConfirm())) void preview.reload();
+			}}
+			testId="delete-novel-dialog"
+		>
+			<p>
+				<strong>{novel.title}</strong>
+			</p>
+			<p>
+				소설을 삭제하면 모든 챕터와 스냅샷이 즉시 영구 삭제되며 되돌릴 수
+				없습니다
+			</p>
+			<DeleteMemoNote state={preview.state} reload={preview.reload} />
+		</ConfirmDialog>
 	);
 }

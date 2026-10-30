@@ -3,8 +3,10 @@
 import { toPlainText } from "@novelist/shared";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DocView } from "../../../../../../components/doc-view";
+import { memoListTitle } from "../../../../../../lib/memo-text";
+import { listAnnotations, listMemos } from "../../../../../../lib/memos";
 import {
 	getChapter,
 	getNovel,
@@ -13,6 +15,9 @@ import {
 import { useIsDesktop } from "../../../../../../lib/use-desktop";
 import { useList } from "../../../../../../lib/use-list";
 import { ReaderSettingsMenu, useReaderSettings } from "./reader-settings";
+
+/** Set when the reader is left for the memo screen, read back when the member returns. */
+const scrollKey = (chapterId: string) => `novelist:reader-scroll:${chapterId}`;
 
 export default function ReadChapterPage() {
 	const { novelId, chapterId } = useParams<{
@@ -40,6 +45,53 @@ function Reader({
 		]);
 		return { novel, chapter, chapters };
 	});
+	// Memos load on their own: a memo failure must not block reading.
+	const memos = useList(() => listMemos({ scope: "chapter", chapterId }));
+	const [showAnnotations, setShowAnnotations] = useState(false);
+	const [anchored, setAnchored] = useState<Set<string>>(new Set());
+	const restoredRef = useRef(false);
+	const ready = state.status === "ready";
+
+	// Annotation marks are hidden by default; showing them needs the rows to skip dead marks.
+	useEffect(() => {
+		if (!showAnnotations) return;
+		listAnnotations(novelId, chapterId)
+			.then((rows) =>
+				setAnchored(
+					new Set(
+						rows.filter((r) => r.state === "anchored").map((r) => r.markId),
+					),
+				),
+			)
+			.catch(() => setShowAnnotations(false));
+	}, [showAnnotations, novelId, chapterId]);
+	const shownIds = useMemo(
+		() => (showAnnotations ? anchored : undefined),
+		[showAnnotations, anchored],
+	);
+
+	// Back from the memo screen: return to where the member was reading.
+	useEffect(() => {
+		if (!ready || restoredRef.current) return;
+		restoredRef.current = true;
+		try {
+			const y = sessionStorage.getItem(scrollKey(chapterId));
+			if (y !== null) {
+				sessionStorage.removeItem(scrollKey(chapterId));
+				window.scrollTo(0, Number(y));
+			}
+		} catch {
+			// storage unavailable: start at the top
+		}
+	}, [ready, chapterId]);
+
+	function rememberPosition() {
+		try {
+			sessionStorage.setItem(scrollKey(chapterId), String(window.scrollY));
+		} catch {
+			// storage unavailable: the reader simply opens at the top next time
+		}
+	}
 
 	const header = (title: string) => (
 		<header className="reader-header">
@@ -59,6 +111,15 @@ function Reader({
 					data-testid="reader-toc-button"
 				>
 					목차
+				</button>
+				<button
+					type="button"
+					className="btn"
+					aria-pressed={showAnnotations}
+					onClick={() => setShowAnnotations((v) => !v)}
+					data-testid="reader-annotations-toggle"
+				>
+					주석 표시
 				</button>
 				<ReaderSettingsMenu {...reader} />
 			</div>
@@ -107,6 +168,7 @@ function Reader({
 	const empty =
 		!chapter.body.content?.some((n) => n.type === "horizontalRule") &&
 		toPlainText(chapter.body) === "";
+	const memosHref = `/novels/${novelId}/chapters/${chapterId}/memos`;
 	const readHref = (id: string) => `/novels/${novelId}/chapters/${id}/read`;
 
 	return (
@@ -167,7 +229,7 @@ function Reader({
 					</div>
 				) : (
 					<article className="prose reader-prose" data-testid="reader-body">
-						<DocView doc={chapter.body} />
+						<DocView doc={chapter.body} annotationIds={shownIds} />
 					</article>
 				)}
 				<nav className="reader-pager" aria-label="챕터 이동">
@@ -194,6 +256,72 @@ function Reader({
 						<span />
 					)}
 				</nav>
+				<section
+					className="reader-memos"
+					aria-labelledby="reader-memos-title"
+					data-testid="reader-memos"
+				>
+					<h2 className="panel-title" id="reader-memos-title">
+						이 챕터 메모
+					</h2>
+					{memos.state.status === "loading" && (
+						<p className="muted" aria-busy="true">
+							불러오는 중…
+						</p>
+					)}
+					{memos.state.status === "error" && (
+						<div>
+							<p
+								role="alert"
+								className="form-alert"
+								data-testid="reader-memos-error"
+							>
+								{memos.state.message}
+							</p>
+							<button type="button" className="btn" onClick={memos.reload}>
+								다시 시도
+							</button>
+						</div>
+					)}
+					{memos.state.status === "ready" &&
+						(memos.state.data.length === 0 ? (
+							<p className="muted" data-testid="reader-memos-empty">
+								이 챕터에 남긴 메모가 없습니다
+							</p>
+						) : (
+							<ul className="rows" data-testid="reader-memo-list">
+								{memos.state.data.map((memo) => (
+									<li key={memo.id} className="row">
+										<Link
+											href={`${memosHref}?memo=${memo.id}`}
+											onClick={rememberPosition}
+											data-testid="reader-memo-item"
+										>
+											{memoListTitle(memo)}
+										</Link>
+									</li>
+								))}
+							</ul>
+						))}
+					<p>
+						<Link
+							href={`${memosHref}?new=1`}
+							className="btn btn-link"
+							onClick={rememberPosition}
+							data-testid="reader-memo-new"
+						>
+							메모 쓰기
+						</Link>{" "}
+						<Link
+							href={memosHref}
+							className="btn btn-link"
+							onClick={rememberPosition}
+							data-testid="reader-memo-open"
+						>
+							메모 전체 화면
+						</Link>
+					</p>
+				</section>
 				{isDesktop && (
 					<p>
 						<Link

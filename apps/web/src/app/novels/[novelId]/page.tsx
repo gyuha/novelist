@@ -9,6 +9,7 @@ import { MoreMenu } from "../../../components/more-menu";
 import { TitleForm } from "../../../components/title-form";
 import { errorText } from "../../../lib/api";
 import { formatDateTime } from "../../../lib/format";
+import { chapterDeletePreview } from "../../../lib/memos";
 import {
 	createChapter,
 	deleteChapter,
@@ -18,6 +19,10 @@ import {
 	moveChapter,
 	renameChapter,
 } from "../../../lib/novels";
+import {
+	DeleteMemoNote,
+	useDeletePreview,
+} from "../../../lib/use-delete-preview";
 import { useIsDesktop } from "../../../lib/use-desktop";
 import { useList } from "../../../lib/use-list";
 
@@ -191,6 +196,13 @@ export default function ChaptersPage() {
 						</div>
 					)}
 				</div>
+				<Link
+					href={`/memos?scope=novel&novelId=${novelId}`}
+					className="btn btn-link"
+					data-testid="novel-memos-link"
+				>
+					소설 메모
+				</Link>
 				{list[0] ? (
 					<Link
 						href={`/novels/${novelId}/chapters/${list[0].id}/read`}
@@ -349,11 +361,9 @@ export default function ChaptersPage() {
 			)}
 
 			{deleting && (
-				<ConfirmDialog
-					title="챕터 삭제"
-					confirmLabel="챕터 삭제"
-					busyLabel="삭제 중…"
-					danger
+				<DeleteChapterDialog
+					novelId={novelId}
+					chapter={deleting}
 					busy={deleteBusy}
 					error={deleteError}
 					onCancel={() => setDeleting(null)}
@@ -366,18 +376,57 @@ export default function ChaptersPage() {
 							setChapters(await listChapters(novelId));
 						} catch (error) {
 							setDeleteError(errorText(error));
+							return false;
 						} finally {
 							setDeleteBusy(false);
 						}
+						return true;
 					}}
-					testId="delete-chapter-dialog"
-				>
-					<p>
-						<strong>{deleting.title}</strong>
-					</p>
-					<p>챕터와 이 챕터의 스냅샷이 즉시 영구 삭제되며 되돌릴 수 없습니다</p>
-				</ConfirmDialog>
+				/>
 			)}
 		</>
+	);
+}
+
+function DeleteChapterDialog({
+	novelId,
+	chapter,
+	busy,
+	error,
+	onCancel,
+	onConfirm,
+}: {
+	novelId: string;
+	chapter: ChapterSummary;
+	busy: boolean;
+	error: string | null;
+	onCancel: () => void;
+	/** Resolves false when the delete failed, so the memo count is read again. */
+	onConfirm: () => Promise<boolean>;
+}) {
+	const preview = useDeletePreview(() =>
+		chapterDeletePreview(novelId, chapter.id),
+	);
+	return (
+		<ConfirmDialog
+			title="챕터 삭제"
+			confirmLabel="챕터 삭제"
+			busyLabel="삭제 중…"
+			danger
+			busy={busy}
+			error={error}
+			confirmDisabled={preview.state.status !== "ready"}
+			onCancel={onCancel}
+			onConfirm={async () => {
+				if (!(await onConfirm())) void preview.reload();
+			}}
+			testId="delete-chapter-dialog"
+		>
+			<p>
+				<strong>{chapter.title}</strong>
+			</p>
+			<p>챕터와 이 챕터의 스냅샷이 즉시 영구 삭제되며 되돌릴 수 없습니다</p>
+			<DeleteMemoNote state={preview.state} reload={preview.reload} />
+		</ConfirmDialog>
 	);
 }

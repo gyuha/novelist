@@ -142,11 +142,13 @@ AI 초안 수락 직전·복원 직전에 자동(`auto`), 회원 요청 시 수�
 | `kind`                     | `novel`(소설 메모) \| `chapter`(챕터 메모) \| `free`(자유 메모) |
 | `novel_id` FK NULL         | `novel`·`chapter`일 때 필수, CASCADE                            |
 | `chapter_id` FK NULL       | `chapter`일 때 필수, CASCADE                                    |
-| `body`                     |                                                                 |
+| `title`                    | 선택 입력(NULL 허용), 최대 200자(CHECK). 비면 목록에 본문 첫 줄을 표시 |
+| `body`                     | **ProseMirror JSON** — 챕터와 같은 문서 모델(문단·강조·장면 전환)에서 주석 마크를 뺀 것. 최대 200KB(검증은 API) |
 | `ai_reference`             | 0/1. **AI 참고 메모** 플래그. 1인 메모만 AI 컨텍스트에 들어간다 |
-| `created_at`, `updated_at` |                                                                 |
+| `created_at`               |                                                                 |
+| `updated_at`               | 메모 저장마다 갱신(저장 충돌 판정용)                            |
 
-`kind`와 FK 널 여부의 일치는 CHECK 제약으로 보장한다.
+`kind`와 FK 널 여부의 일치는 CHECK 제약으로 보장한다: `free`는 `novel_id`·`chapter_id` 모두 NULL, `novel`은 `novel_id`만, `chapter`는 둘 다 필수. 소속을 바꿀 때마다 API가 이 일치를 다시 검증한다.
 
 ### annotations — 본문 주석
 
@@ -156,13 +158,13 @@ TipTap 마크의 id로 본문과 연결된다. 본문을 고쳐도 마크가 텍
 | -------------------------- | ---------------------------------------------- |
 | `id` PK, `user_id` FK      | 소유자                                         |
 | `chapter_id` FK            | CASCADE                                        |
-| `mark_id`                  | 본문 마크의 id. 챕터 내 유일                   |
+| `mark_id`                  | 본문 `annotation` 마크의 id. 챕터 내 유일(UNIQUE `chapter_id`+`mark_id`) |
 | `body`                     | 주석 내용                                      |
 | `state`                    | `anchored` \| `orphaned`                       |
-| `quote`                    | 걸려 있던 텍스트 스냅샷(위치 잃은 주석 표시용) |
+| `quote`                    | 걸려 있던 텍스트 스냅샷(위치 잃은 주석 표시용). 연결된 동안은 저장 때마다 갱신 |
 | `created_at`, `updated_at` |                                                |
 
-주석이 걸린 텍스트가 통째로 지워지면 챕터 저장 시 본문에서 해당 `mark_id`를 찾지 못하므로 행을 지우지 않고 `state = 'orphaned'`로 바꿔 보존한다.
+주석이 걸린 텍스트가 통째로 지워지면 챕터 저장 시 본문에서 해당 `mark_id`를 찾지 못하므로 행을 지우지 않고 `state = 'orphaned'`로 바꿔 보존한다. 챕터 본문 저장·스냅샷 복원 때마다 API가 그 챕터의 행과 본문 마크를 대조해 `state`를 다시 정하므로, 같은 id의 마크가 돌아오면(예: 복원) `anchored`로 재연결된다. 행이 없는 주석 마크는 저장 시 본문에서 제거된다.
 
 ### characters — 캐릭터
 
