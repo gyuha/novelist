@@ -7,6 +7,9 @@ import { api, request } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { redirectFor, shellKind } from "../lib/route-guard";
 
+/** Editor and reader render their own header and use the full window. */
+const BARE_PATH = /^\/novels\/[^/]+\/chapters\/[^/]+\/(edit|read)$/;
+
 const NAV_ITEMS = [
 	{ href: "/novels", label: "소설" },
 	{ href: "/memos", label: "메모" },
@@ -48,7 +51,7 @@ function useLogout() {
 	};
 }
 
-function ThemeToggle() {
+export function ThemeToggle() {
 	const [theme, setTheme] = useState<Theme>("light");
 
 	useEffect(() => {
@@ -77,7 +80,13 @@ function ThemeToggle() {
 	);
 }
 
-function AccountMenu({ email, isAdmin }: { email: string; isAdmin: boolean }) {
+export function AccountMenu({
+	email,
+	isAdmin,
+}: {
+	email: string;
+	isAdmin: boolean;
+}) {
 	const [open, setOpen] = useState(false);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const logout = useLogout();
@@ -297,6 +306,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 	if (target) return <main className="center-page" aria-busy="true" />;
 
 	const kind = shellKind(me);
+	if (kind === "full" && me && BARE_PATH.test(pathname)) {
+		return <div className="bare-shell">{children}</div>;
+	}
 	if (kind === "full" && me) {
 		return (
 			<FullShell email={me.email} isAdmin={me.role === "admin"}>

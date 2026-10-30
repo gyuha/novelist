@@ -5,6 +5,8 @@ import { LoginLimiter } from "./login-limiter";
 import { type AppEnv, originCheck, sessionMiddleware } from "./middleware";
 import { adminRoutes } from "./routes/admin";
 import { authRoutes } from "./routes/auth";
+import { chapterRoutes } from "./routes/chapters";
+import { novelRoutes } from "./routes/novels";
 import { sseResponse } from "./sse";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -22,7 +24,9 @@ export function createApp(db: Db, opts: { now?: () => number } = {}) {
 			return c.json<HealthResponse>({ status: "ok", db: row.ok });
 		})
 		.route("/auth", authRoutes(db, now, limiter))
-		.route("/admin", adminRoutes(db, now));
+		.route("/admin", adminRoutes(db, now))
+		.route("/novels", novelRoutes(db, now))
+		.route("/novels", chapterRoutes(db, now));
 
 	if (process.env.ENABLE_TEST_ENDPOINTS === "1") {
 		app.get("/test/sse", (c) =>

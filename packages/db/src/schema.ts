@@ -30,3 +30,62 @@ export const sessions = sqliteTable(
 	},
 	(t) => [index("sessions_user_id_idx").on(t.userId)],
 );
+
+export const novels = sqliteTable(
+	"novels",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		title: text("title").notNull(),
+		description: text("description"),
+		createdAt: integer("created_at").notNull(),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(t) => [index("novels_user_id_idx").on(t.userId)],
+);
+
+export const chapters = sqliteTable(
+	"chapters",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		novelId: text("novel_id")
+			.notNull()
+			.references(() => novels.id, { onDelete: "cascade" }),
+		title: text("title").notNull(),
+		position: integer("position").notNull(),
+		// ProseMirror JSON(문자열). 형식 검증은 shared 문서 모델이 맡는다.
+		body: text("body").notNull(),
+		createdAt: integer("created_at").notNull(),
+		// 본문 저장 때만 갱신한다(저장 충돌 판정용).
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(t) => [
+		index("chapters_user_id_idx").on(t.userId),
+		index("chapters_novel_id_position_idx").on(t.novelId, t.position),
+	],
+);
+
+export const chapterSnapshots = sqliteTable(
+	"chapter_snapshots",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		chapterId: text("chapter_id")
+			.notNull()
+			.references(() => chapters.id, { onDelete: "cascade" }),
+		body: text("body").notNull(),
+		kind: text("kind", { enum: ["auto", "manual"] }).notNull(),
+		createdAt: integer("created_at").notNull(),
+	},
+	(t) => [
+		index("chapter_snapshots_user_id_idx").on(t.userId),
+		index("chapter_snapshots_chapter_id_idx").on(t.chapterId),
+	],
+);

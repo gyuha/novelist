@@ -1,7 +1,7 @@
 import type { MeResponse } from "@novelist/shared";
 
-/** Landing page after sign-in until the novel list (/novels) exists. */
-export const HOME_PATH = "/";
+/** Landing page after sign-in. */
+export const HOME_PATH = "/novels";
 
 const PUBLIC_PATHS = ["/login", "/signup"];
 

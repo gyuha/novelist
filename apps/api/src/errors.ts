@@ -17,12 +17,15 @@ const messages: Record<ApiErrorCode, string> = {
 	invalid_current_password: "현재 비밀번호가 올바르지 않습니다.",
 	admin_target_forbidden: "관리자 계정에는 적용할 수 없습니다.",
 	invalid_state: "현재 상태에서는 처리할 수 없습니다.",
+	payload_too_large: "본문이 너무 큽니다. 1MB 이하로 줄여 주세요.",
+	version_conflict: "다른 곳에서 먼저 저장된 내용이 있습니다.",
 };
 
 export function fail(
 	c: Context,
 	status: ContentfulStatusCode,
 	code: ApiErrorCode,
+	extra: Record<string, unknown> = {},
 ) {
-	return c.json({ code, message: messages[code] }, status);
+	return c.json({ code, message: messages[code], ...extra }, status);
 }
