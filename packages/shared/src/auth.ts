@@ -79,6 +79,8 @@ export const apiErrorCodes = [
 	"invalid_current_password",
 	"admin_target_forbidden",
 	"invalid_state",
+	"payload_too_large",
+	"version_conflict",
 ] as const;
 export const apiErrorCodeSchema = z.enum(apiErrorCodes);
 export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>;

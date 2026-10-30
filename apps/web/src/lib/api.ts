@@ -11,6 +11,8 @@ export class ApiRequestError extends Error {
 		readonly code: RequestErrorCode,
 		readonly status: number,
 		message: string,
+		/** Set on 409 version_conflict: the server's current chapter version. */
+		readonly currentUpdatedAt?: number,
 	) {
 		super(message);
 	}
@@ -25,12 +27,15 @@ export async function request(pending: Promise<Response>): Promise<Response> {
 		throw new ApiRequestError("network", 0, "network error");
 	}
 	if (res.ok) return res;
-	const parsed = apiErrorSchema.safeParse(await res.json().catch(() => null));
+	const raw = await res.json().catch(() => null);
+	const parsed = apiErrorSchema.safeParse(raw);
 	if (parsed.success) {
+		const current = (raw as { currentUpdatedAt?: unknown }).currentUpdatedAt;
 		throw new ApiRequestError(
 			parsed.data.code,
 			res.status,
 			parsed.data.message,
+			typeof current === "number" ? current : undefined,
 		);
 	}
 	throw new ApiRequestError("unknown", res.status, `HTTP ${res.status}`);
@@ -53,6 +58,9 @@ const messages: Record<RequestErrorCode, string> = {
 	invalid_current_password: "현재 비밀번호가 올바르지 않습니다",
 	admin_target_forbidden: "관리자 계정에는 적용할 수 없습니다",
 	invalid_state: "현재 상태에서는 처리할 수 없습니다. 목록을 새로고침해 주세요",
+	payload_too_large:
+		"본문 크기가 저장 한도(1MB)를 초과했습니다. 내용을 줄이거나 챕터를 나누어 다시 저장해 주세요",
+	version_conflict: "다른 곳에서 이 챕터가 변경되어 저장하지 못했습니다",
 	network: "서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요",
 	unknown: "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요",
 };

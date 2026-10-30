@@ -29,7 +29,7 @@ async function signup(page: Page, email: string, password = MEMBER_PASSWORD) {
 
 async function openAdmin(page: Page, tab: "pending" | "members" = "pending") {
 	await login(page, ADMIN_EMAIL, ADMIN_PASSWORD);
-	await page.waitForURL("/");
+	await page.waitForURL("/novels");
 	await page.goto("/admin");
 	if (tab === "members") await page.getByTestId("tab-members").click();
 }
@@ -72,7 +72,7 @@ test("sign-up, pending, admin approval, and member login", async ({
 	await approve(admin, email);
 	await member.getByTestId("logout-button").click();
 	await login(member, email, MEMBER_PASSWORD);
-	await member.waitForURL("/");
+	await member.waitForURL("/novels");
 	await expect(member.getByTestId("account-menu-button")).toBeVisible();
 	await member.close();
 	await admin.close();
@@ -105,7 +105,7 @@ test("suspension ends the member session and unsuspension restores login", async
 	const admin = await browser.newPage({ baseURL: BASE_URL });
 	await createActiveMember(member, admin, email);
 	await login(member, email, MEMBER_PASSWORD);
-	await member.waitForURL("/");
+	await member.waitForURL("/novels");
 	await admin.getByTestId("tab-members").click();
 	await openMemberAction(admin, email, "suspend");
 	await admin.getByTestId("suspend-dialog-confirm").click();
@@ -117,7 +117,7 @@ test("suspension ends the member session and unsuspension restores login", async
 	await openMemberAction(admin, email, "unsuspend");
 	await expect(admin.getByTestId(`member-status-${email}`)).toHaveText("활성");
 	await login(member, email, MEMBER_PASSWORD);
-	await member.waitForURL("/");
+	await member.waitForURL("/novels");
 	await member.close();
 	await admin.close();
 });
@@ -146,11 +146,11 @@ test("password reset forces a change and the new password works", async ({
 	await member.getByTestId("password-new").fill(newPassword);
 	await member.getByTestId("password-confirm").fill(newPassword);
 	await member.getByTestId("password-submit").click();
-	await member.waitForURL("/");
+	await member.waitForURL("/novels");
 	await member.getByTestId("account-menu-button").click();
 	await member.getByTestId("menu-logout").click();
 	await login(member, email, newPassword);
-	await member.waitForURL("/");
+	await member.waitForURL("/novels");
 	await member.close();
 	await admin.close();
 });
@@ -164,7 +164,7 @@ test("member voluntarily changes password from the account menu", async ({
 	const admin = await browser.newPage({ baseURL: BASE_URL });
 	await createActiveMember(member, admin, email);
 	await login(member, email, MEMBER_PASSWORD);
-	await member.waitForURL("/");
+	await member.waitForURL("/novels");
 	await member.getByTestId("account-menu-button").click();
 	await member.getByTestId("menu-change-password").click();
 	await member.waitForURL("/account/password");
@@ -177,7 +177,7 @@ test("member voluntarily changes password from the account menu", async ({
 	await member.getByTestId("account-menu-button").click();
 	await member.getByTestId("menu-logout").click();
 	await login(member, email, newPassword);
-	await member.waitForURL("/");
+	await member.waitForURL("/novels");
 	await member.close();
 	await admin.close();
 });
@@ -208,7 +208,7 @@ test("non-admin sees the forbidden state without admin data", async ({
 	const admin = await browser.newPage({ baseURL: BASE_URL });
 	await createActiveMember(member, admin, email);
 	await login(member, email, MEMBER_PASSWORD);
-	await member.waitForURL("/");
+	await member.waitForURL("/novels");
 	await member.goto("/admin");
 	await expect(member.getByTestId("admin-forbidden")).toBeVisible();
 	await expect(member.getByTestId("pending-list")).toHaveCount(0);

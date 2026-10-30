@@ -4,6 +4,7 @@ import { AppShell } from "../components/app-shell";
 import { AuthProvider } from "../lib/auth";
 import "../styles/tokens.css";
 import "./globals.css";
+import "./work.css";
 
 export const metadata: Metadata = {
 	title: "novelist",

@@ -49,6 +49,7 @@ erDiagram
         text id PK
         text user_id FK
         text title
+        text description "선택, 최대 1000자"
     }
     chapters {
         text id PK
@@ -90,6 +91,7 @@ erDiagram
 | -------------------------- | ------ |
 | `id` PK, `user_id` FK      | 소유자 |
 | `title`                    |        |
+| `description`              | 선택 입력(NULL 허용), 최대 1,000자(검증은 API) |
 | `created_at`, `updated_at` |        |
 
 회원 한 명이 여러 편을 가진다. 별도의 작업공간 단위는 없다.
@@ -102,11 +104,14 @@ erDiagram
 | `novel_id` FK              | CASCADE                            |
 | `title`, `position`        | 순서                               |
 | `body`                     | **ProseMirror JSON** (TipTap 문서) |
-| `created_at`, `updated_at` |                                    |
+| `created_at`               |                                    |
+| `updated_at`               | 본문 저장 때만 갱신(저장 충돌 판정용). 제목 변경·순서 이동은 바꾸지 않는다 |
+
+`position`은 소설 안에서의 순서이며 삭제로 빈 번호가 생길 수 있다(유일 제약 없음). 위/아래 이동은 인접 챕터와 `position`을 맞바꾸고, 새 챕터는 현재 최댓값 + 1이다.
 
 ### chapter_snapshots — 챕터 스냅샷(수정 이력)
 
-AI 초안 수락 직전 자동, 회원 요청 시 수동으로 남긴다. 복원만 지원하며 비교(diff)는 없다.
+AI 초안 수락 직전·복원 직전에 자동(`auto`), 회원 요청 시 수동(`manual`)으로 남긴다. 복원만 지원하며 비교(diff)는 없다. `auto`는 챕터당 최근 20개만 보관하고 `manual`은 지우지 않는다.
 
 | 컬럼                  | 설명                        |
 | --------------------- | --------------------------- |

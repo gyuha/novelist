@@ -5,7 +5,7 @@ test("home page reports a healthy API", async ({ page }) => {
 	await page.getByTestId("login-email").fill("admin@example.com");
 	await page.getByTestId("login-password").fill("AdminPassword123!");
 	await page.getByTestId("login-submit").click();
-	await page.waitForURL("/");
+	await page.waitForURL("/novels");
 	await page.goto("/");
 	await expect(page.getByTestId("api-health")).toHaveText("API 정상");
 });
